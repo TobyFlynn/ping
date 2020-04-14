@@ -34,7 +34,7 @@ void timing_start(double *timer);
 
 // Network functions
 int domain_lookup(char *addr, char *ip, struct sockaddr_in *addr_con);
-//int reverse_lookup(char *ip);
+int reverse_lookup(char *ip, char *addr);
 unsigned short checksum (void *pkt, int len);
 void snd_rcv_echo(int socket_handle, struct sockaddr_in *target_addr, char *ip, int ttl);
 
@@ -84,8 +84,21 @@ int main(int argc, char *argv[]) {
     exit(EXIT_FAILURE);
   }
   
-  printf("Pinging %s with a ttl of %d\n", domain, ttl);
-  printf("Resolved to IPv4 Address: %s\n", ip);
+  // Reverse lookup the resolved IP address (as may be redirected)
+  char *domain2 = (char *) malloc(NI_MAXHOST * sizeof(char));
+  if(reverse_lookup(ip, domain2) != 0) {
+    fprintf(stderr, "Error looking up IP address\n");
+    
+    printf("Pinging %s with a ttl of %d\n", domain, ttl);
+    printf("Resolved to IPv4 Address: %s\n", ip);
+  } else {
+    printf("Pinging %s with a ttl of %d\n", domain, ttl);
+    printf("Resolved to IPv4 Address: %s (%s)\n", ip, domain2);
+  }
+  
+  // Free memory used my domain2
+  free(domain2);
+  domain2 = NULL;
   
   // Create socket
   int shandle = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
@@ -128,6 +141,7 @@ int main(int argc, char *argv[]) {
   return 0;
 }
 
+// Get IP address from domain name
 int domain_lookup(char *addr, char *ip, struct sockaddr_in *addr_con) {
   struct hostent *host_entity;
   
@@ -144,6 +158,24 @@ int domain_lookup(char *addr, char *ip, struct sockaddr_in *addr_con) {
   return 0;
 }
 
+// Get domain name from IP address
+int reverse_lookup(char *ip, char *addr) {
+  struct sockaddr_in temp_addr;     
+  socklen_t len; 
+  
+  temp_addr.sin_family = AF_INET; 
+  temp_addr.sin_addr.s_addr = inet_addr(ip); 
+  len = sizeof(struct sockaddr_in); 
+  
+  if (getnameinfo((struct sockaddr *) &temp_addr, len, addr, 
+                   NI_MAXHOST * sizeof(char), NULL, 0, NI_NAMEREQD)) { 
+      return -1; 
+  }
+  
+  return 0;
+}
+
+// Checksum for ICMP packet
 unsigned short checksum (void *pkt, int len) {
   unsigned short *buf = pkt;
   unsigned int sum = 0; 
@@ -161,6 +193,7 @@ unsigned short checksum (void *pkt, int len) {
   return result; 
 }
 
+// Sends and receives echo packets in an infinite loop
 void snd_rcv_echo(int socket_handle, struct sockaddr_in *target_addr, char *ip, int ttl) {
   int num_sent = 0;
   int num_received = 0;
@@ -221,6 +254,7 @@ void snd_rcv_echo(int socket_handle, struct sockaddr_in *target_addr, char *ip, 
   printf("\nOverall packet loss: %f %%\n", loss);
 }
 
+// Timer functions
 double elapsed_time(double *et) {
   struct timeval t;
   double old_time = *et;
