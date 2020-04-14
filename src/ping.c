@@ -77,7 +77,7 @@ int main(int argc, char *argv[]) {
   }
   
   // Lookup domain name of target
-  char *ip = (char *) malloc(16 * sizeof(char));
+  char *ip = (char *) malloc(INET_ADDRSTRLEN * sizeof(char));
   struct sockaddr_in addr_con;
   if(domain_lookup(domain, ip, &addr_con) != 0) {
     fprintf(stderr, "Error looking up domain\n");
@@ -143,17 +143,29 @@ int main(int argc, char *argv[]) {
 
 // Get IP address from domain name
 int domain_lookup(char *addr, char *ip, struct sockaddr_in *addr_con) {
-  struct hostent *host_entity;
+  struct addrinfo hints;
+  struct addrinfo *result;
   
-  if ((host_entity = gethostbyname(addr)) == NULL) { 
+  memset(&hints, 0, sizeof(struct addrinfo));
+  
+  hints.ai_family = AF_INET;
+  hints.ai_socktype = SOCK_STREAM;
+  hints.ai_flags = hints.ai_flags | AI_CANONNAME;
+  
+  int status;
+  if((status = getaddrinfo(addr, NULL, &hints, &result)) != 0) {
     return -1;
   }
   
-  strcpy(ip, inet_ntoa(*((struct in_addr *) host_entity->h_addr)));
+  struct sockaddr_in * tmp = (struct sockaddr_in *) result->ai_addr;
   
-  addr_con->sin_family = host_entity->h_addrtype;
+  inet_ntop(AF_INET, &(tmp->sin_addr), ip, INET_ADDRSTRLEN);
+  
+  addr_con->sin_family = result->ai_family;
   addr_con->sin_port = htons(0);
-  addr_con->sin_addr.s_addr = *((long *) host_entity->h_addr);
+  addr_con->sin_addr.s_addr = tmp->sin_addr.s_addr;
+  
+  freeaddrinfo(result);
   
   return 0;
 }
