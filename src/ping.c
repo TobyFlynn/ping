@@ -57,13 +57,14 @@ int main(int argc, char *argv[]) {
     exit(EXIT_FAILURE);
   }
   
+  // Get the domain name
   int domain_length = strlen(argv[1]);
   char *domain = (char *) malloc(domain_length * sizeof(char));
   strcpy(domain, argv[1]);
   
   int ttl = DEFAULT_TTL;
   
-  // Get arguments
+  // Get arguments (TTL value)
   int optc;
   while ((optc = getopt_long(argc, argv, OPTSTRING, long_opts, NULL)) != EOF) {
     switch (optc) {
@@ -76,7 +77,7 @@ int main(int argc, char *argv[]) {
     }
   }
   
-  // Lookup domain name of target
+  // Lookup domain name of target to get IP address
   char *ip = (char *) malloc(INET_ADDRSTRLEN * sizeof(char));
   struct sockaddr_in addr_con;
   if(domain_lookup(domain, ip, &addr_con) != 0) {
@@ -87,8 +88,6 @@ int main(int argc, char *argv[]) {
   // Reverse lookup the resolved IP address (as may be redirected)
   char *domain2 = (char *) malloc(NI_MAXHOST * sizeof(char));
   if(reverse_lookup(ip, domain2) != 0) {
-    fprintf(stderr, "Error looking up IP address\n");
-    
     printf("Pinging %s with a ttl of %d\n", domain, ttl);
     printf("Resolved to IPv4 Address: %s\n", ip);
   } else {
@@ -96,7 +95,7 @@ int main(int argc, char *argv[]) {
     printf("Resolved to IPv4 Address: %s (%s)\n", ip, domain2);
   }
   
-  // Free memory used my domain2
+  // Free memory used by domain2
   free(domain2);
   domain2 = NULL;
   
@@ -122,16 +121,18 @@ int main(int argc, char *argv[]) {
     exit(EXIT_FAILURE);
   }
   
+  // Start overall timer
   double total_timer = 0.0;
   timing_start(&total_timer);
   
   // Send and receive ICMP echo packets
   snd_rcv_echo(shandle, &addr_con, ip, ttl);
   
+  // End and print total time
   double total_time = elapsed_time(&total_timer);
-  
   printf("Total runtime: %f s\n", total_time);
   
+  // Close socket
   close(shandle);
   
   // Free memory
@@ -146,25 +147,31 @@ int domain_lookup(char *addr, char *ip, struct sockaddr_in *addr_con) {
   struct addrinfo hints;
   struct addrinfo *result;
   
+  // Set hints for address lookup
   memset(&hints, 0, sizeof(struct addrinfo));
-  
+  // Get IPv4 address
   hints.ai_family = AF_INET;
   hints.ai_socktype = SOCK_STREAM;
   hints.ai_flags = hints.ai_flags | AI_CANONNAME;
   
+  // Get IP address
   int status;
   if((status = getaddrinfo(addr, NULL, &hints, &result)) != 0) {
+    // Return error
     return -1;
   }
   
   struct sockaddr_in * tmp = (struct sockaddr_in *) result->ai_addr;
   
+  // Get string representation of IP address
   inet_ntop(AF_INET, &(tmp->sin_addr), ip, INET_ADDRSTRLEN);
   
+  // Set connection information for socket
   addr_con->sin_family = result->ai_family;
   addr_con->sin_port = htons(0);
   addr_con->sin_addr.s_addr = tmp->sin_addr.s_addr;
   
+  // Free memory used in address lookup
   freeaddrinfo(result);
   
   return 0;
@@ -181,7 +188,8 @@ int reverse_lookup(char *ip, char *addr) {
   
   if (getnameinfo((struct sockaddr *) &temp_addr, len, addr, 
                    NI_MAXHOST * sizeof(char), NULL, 0, NI_NAMEREQD)) { 
-      return -1; 
+    // Return error
+    return -1; 
   }
   
   return 0;
@@ -218,13 +226,16 @@ void snd_rcv_echo(int socket_handle, struct sockaddr_in *target_addr, char *ip, 
     pkt.hdr.type = ICMP_ECHO;
     pkt.hdr.un.echo.id = getpid();
     
+    // Set packet message
     int i;
     for(i = 0; i < sizeof(pkt.msg) - 1; i++) {
       pkt.msg[i] = (char) i;
     }
-    
+
+    // End with null byte
     pkt.msg[i] = '\0';
     pkt.hdr.un.echo.sequence = num_sent;
+    // Set packet checksum
     pkt.hdr.checksum = checksum(&pkt, sizeof(pkt));
     
     int sent = 1;
@@ -245,14 +256,16 @@ void snd_rcv_echo(int socket_handle, struct sockaddr_in *target_addr, char *ip, 
       socklen_t addr_len = sizeof(rcv_addr);
       
       if(recvfrom(socket_handle, &pkt, sizeof(pkt), 0, (struct sockaddr *)&rcv_addr, &addr_len) <= 0) {
-        fprintf(stderr, "Packet Lost: seq=%d\n", num_sent-1);
+        fprintf(stderr, "Packet Lost: seq=%d\n", num_sent);
       } else {
+        // Get time taken for echo
         double time = elapsed_time(&timer) * 1000.0;
         
         if(!(pkt.hdr.type == 69 && pkt.hdr.code == 0)) {
           fprintf(stderr, "Error received unexpected packet: type %d code %d\n", 
                   pkt.hdr.type, pkt.hdr.code);
         } else {
+          // Print infomation about this echo
           printf("Received %d bytes from %s \t seq=%d ttl=%d rtt=%f ms\n",
                  PKT_SIZE, ip, num_sent, ttl, time);
           num_received++;
@@ -262,6 +275,7 @@ void snd_rcv_echo(int socket_handle, struct sockaddr_in *target_addr, char *ip, 
     }
   }
   
+  // Calculate packet loss
   float loss = 100.0 - (((float)num_received / (float)num_sent) * 100.0);
   printf("\nOverall packet loss: %f %%\n", loss);
 }
